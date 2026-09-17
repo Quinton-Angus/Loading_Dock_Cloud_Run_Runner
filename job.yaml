@@ -1,0 +1,40 @@
+apiVersion: run.googleapis.com/v1
+kind: Job
+metadata:
+  name: loading-dock-builder
+spec:
+  template:
+    spec:
+      parallelism: 1
+      taskCount: 1
+      template:
+        spec:
+          maxRetries: 0
+          timeoutSeconds: 3600
+          containers:
+            - image: IMAGE_URL
+              env:
+                - name: BUILD_PLATFORM
+                  value: android
+                - name: BUILD_PROFILE
+                  value: preview
+                - name: BUILD_OUTPUT_DIRECTORY
+                  value: /workspace/output
+                - name: BUILD_WORKSPACE_DIRECTORY
+                  value: /workspace/source
+                - name: GRADLE_HEAP_MB
+                  value: "6144"
+                - name: GRADLE_METASPACE_MB
+                  value: "1024"
+                - name: GRADLE_WORKERS
+                  value: "4"
+                - name: RUN_EXPO_DOCTOR
+                  value: "true"
+                - name: NPM_INSTALL_COMMAND
+                  value: ci
+                - name: ARTIFACT_PREFIX
+                  value: loading-dock
+              resources:
+                limits:
+                  cpu: "4"
+                  memory: 16Gi
