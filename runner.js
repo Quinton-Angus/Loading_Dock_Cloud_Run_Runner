@@ -11,7 +11,6 @@ const config = {
   profile: process.env.BUILD_PROFILE || "preview",
   outputDirectory: process.env.BUILD_OUTPUT_DIRECTORY || "/workspace/output",
   workspaceDirectory: process.env.BUILD_WORKSPACE_DIRECTORY || "/workspace/source",
-  easCliVersion: process.env.EAS_CLI_VERSION || "latest",
   gradleHeapMB: process.env.GRADLE_HEAP_MB || "6144",
   gradleMetaspaceMB: process.env.GRADLE_METASPACE_MB || "1024",
   gradleWorkers: process.env.GRADLE_WORKERS || "4",
@@ -26,12 +25,6 @@ function log(message) {
   console.log(`[RUNNER] ${message}`)
 }
 
-function fail(message, error) {
-  console.error(`[RUNNER] ${message}`)
-  if (error) console.error(error)
-  process.exitCode = 1
-}
-
 function run(command, args, options = {}) {
   return new Promise((resolvePromise, reject) => {
     log(`Running: ${command} ${args.join(" ")}`)
@@ -44,7 +37,6 @@ function run(command, args, options = {}) {
 
     child.stdout.on("data", data => process.stdout.write(data))
     child.stderr.on("data", data => process.stderr.write(data))
-
     child.on("error", reject)
     child.on("close", code => {
       if (code === 0) resolvePromise()
@@ -54,20 +46,18 @@ function run(command, args, options = {}) {
 }
 
 function validateConfig() {
-  if (!config.repoUrl) {
-    throw new Error("BUILD_REPO_URL is required")
-  }
+  if (!config.repoUrl) throw new Error("BUILD_REPO_URL is required")
 
   if (!/^https?:\/\//i.test(config.repoUrl) && !/^git@/i.test(config.repoUrl)) {
     throw new Error("BUILD_REPO_URL must be an HTTP(S) or SSH Git URL")
   }
 
   if (!/^[0-9]+$/.test(String(config.gradleHeapMB)) || Number(config.gradleHeapMB) < 512) {
-    throw new Error("GRADLE_HEAP_MB must be a positive integer of at least 512 MB")
+    throw new Error("GRADLE_HEAP_MB must be an integer of at least 512 MB")
   }
 
   if (!/^[0-9]+$/.test(String(config.gradleMetaspaceMB)) || Number(config.gradleMetaspaceMB) < 128) {
-    throw new Error("GRADLE_METASPACE_MB must be a positive integer of at least 128 MB")
+    throw new Error("GRADLE_METASPACE_MB must be an integer of at least 128 MB")
   }
 
   if (!/^[1-9][0-9]*$/.test(String(config.gradleWorkers))) {
@@ -79,28 +69,14 @@ function validateConfig() {
   }
 }
 
-async function commandExists(command) {
-  try {
-    await run("sh", ["-c", `command -v ${command} >/dev/null 2>&1`])
-    return true
-  } catch {
-    return false
-  }
-}
-
 async function installDependencies(buildDirectory) {
-  const lockFiles = ["package-lock.json", "npm-shrinkwrap.json"]
-  let hasLockFile = false
-
-  for (const lockFile of lockFiles) {
-    try {
-      await access(join(buildDirectory, lockFile), fsConstants.F_OK)
-      hasLockFile = true
-      break
-    } catch {}
-  }
+  const hasLockFile = await Promise.any([
+    access(join(buildDirectory, "package-lock.json"), fsConstants.F_OK),
+    access(join(buildDirectory, "npm-shrinkwrap.json"), fsConstants.F_OK)
+  ]).then(() => true).catch(() => false)
 
   const npmCommand = hasLockFile && config.npmInstallCommand === "ci" ? "ci" : "install"
+
   await run("npm", [npmCommand, "--prefer-offline", "--no-audit", "--no-fund"], {
     cwd: buildDirectory
   })
@@ -121,8 +97,7 @@ function createGradleEnvironment() {
       `-Dorg.gradle.workers.max=${config.gradleWorkers}`,
       "-Dorg.gradle.parallel=true",
       "-Dorg.gradle.daemon=false"
-    ].join(" "),
-    JAVA_TOOL_OPTIONS: process.env.JAVA_TOOL_OPTIONS || ""
+    ].join(" ")
   }
 }
 
@@ -138,15 +113,15 @@ async function uploadArtifact(filePath, objectName) {
   }
 
   const storage = new Storage()
-  const bucket = storage.bucket(config.artifactBucket)
-  await bucket.upload(filePath, {
+  await storage.bucket(config.artifactBucket).upload(filePath, {
     destination: objectName,
     resumable: false,
     validation: "crc32c"
   })
 
-  log(`Uploaded artifact to gs://${config.artifactBucket}/${objectName}`)
-  return `gs://${config.artifactBucket}/${objectName}`
+  const uri = `gs://${config.artifactBucket}/${objectName}`
+  log(`Uploaded artifact to ${uri}`)
+  return uri
 }
 
 async function main() {
@@ -164,7 +139,13 @@ async function main() {
   await mkdir(config.workspaceDirectory, { recursive: true })
   await mkdir(config.outputDirectory, { recursive: true })
 
-  await run("git", ["clone", "--depth", "1", "--single-branch", config.repoUrl, config.workspaceDirectory])
+  await run("git", [
+    "clone",
+    "--depth", "1",
+    "--single-branch",
+    config.repoUrl,
+    config.workspaceDirectory
+  ])
 
   const buildDirectory = resolve(config.workspaceDirectory, config.buildDirectory)
   const workspaceRoot = resolve(config.workspaceDirectory)
@@ -181,12 +162,6 @@ async function main() {
   if (config.runExpoDoctor) {
     await run("npx", ["expo-doctor"], { cwd: buildDirectory })
   }
-
-  await run("npx", ["eas-cli@${config.easCliVersion}", "--version"], {
-    cwd: buildDirectory
-  }).catch(async () => {
-    await run("npm", ["install", "--global", `eas-cli@${config.easCliVersion}`, "--no-audit", "--no-fund"])
-  })
 
   const repositoryName = getRepositoryName(config.repoUrl)
   const outputFile = join(
@@ -219,9 +194,11 @@ async function main() {
   log(`Output directory contains: ${files.join(", ") || "nothing"}`)
   log(`Build completed successfully: ${outputFile}`)
 
-  if (uploadedArtifact) {
-    log(`Artifact: ${uploadedArtifact}`)
-  }
+  if (uploadedArtifact) log(`Artifact: ${uploadedArtifact}`)
 }
 
-main().catch(error => fail("Build runner failed", error))
+main().catch(error => {
+  console.error(`[RUNNER] Build runner failed: ${error.message}`)
+  console.error(error)
+  process.exitCode = 1
+})
