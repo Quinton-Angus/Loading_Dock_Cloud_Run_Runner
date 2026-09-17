@@ -2,6 +2,7 @@ import { spawn } from "node:child_process"
 import { mkdir, rm, access } from "node:fs/promises"
 import { constants as fsConstants } from "node:fs"
 import { basename, join, resolve } from "node:path"
+import { pathToFileURL } from "node:url"
 
 const config = {
   repoUrl: process.env.BUILD_REPO_URL,
@@ -73,6 +74,13 @@ function runCapture(command, args, options = {}) {
       else reject(new Error(`${command} exited with code ${code}`))
     })
   })
+}
+
+export function createEasPreflightCommands() {
+  return [
+    ["eas", ["whoami"]],
+    ["eas", ["project:info"]]
+  ]
 }
 
 function validateConfig() {
@@ -212,6 +220,10 @@ async function main() {
     await run("npx", ["expo-doctor"], { cwd: buildDirectory })
   }
 
+  for (const [command, args] of createEasPreflightCommands()) {
+    await run(command, args, { cwd: buildDirectory })
+  }
+
   const repositoryName = getRepositoryName(config.repoUrl)
   const outputFile = join(
     config.outputDirectory,
@@ -226,7 +238,8 @@ async function main() {
       "--profile", config.profile,
       "--local",
       "--non-interactive",
-      "--output", outputFile
+      "--output", outputFile,
+      "--verbose"
     ],
     {
       cwd: buildDirectory,
@@ -241,8 +254,10 @@ async function main() {
   log(`Build ${config.buildId} uploaded to EAS successfully.`)
 }
 
-main().catch(error => {
-  console.error(`[RUNNER] Build runner failed: ${error.message}`)
-  console.error(error)
-  process.exitCode = 1
-})
+if (import.meta.url === pathToFileURL(process.argv[1]).href) {
+  main().catch(error => {
+    console.error(`[RUNNER] Build runner failed: ${error.message}`)
+    console.error(error)
+    process.exitCode = 1
+  })
+}
