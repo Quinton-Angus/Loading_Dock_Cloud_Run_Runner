@@ -32,8 +32,11 @@ spec:
                   value: "true"
                 - name: NPM_INSTALL_COMMAND
                   value: ci
-                - name: ARTIFACT_PREFIX
-                  value: loading-dock
+                - name: EXPO_TOKEN
+                  valueFrom:
+                    secretKeyRef:
+                      name: EXPO_TOKEN
+                      key: "1"
               resources:
                 limits:
                   cpu: "4"
