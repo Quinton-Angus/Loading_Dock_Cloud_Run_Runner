@@ -1,8 +1,7 @@
 import { spawn } from "node:child_process"
-import { mkdir, rm, access, readdir } from "node:fs/promises"
+import { mkdir, rm, access } from "node:fs/promises"
 import { constants as fsConstants } from "node:fs"
 import { basename, join, resolve } from "node:path"
-import { Storage } from "@google-cloud/storage"
 
 const config = {
   repoUrl: process.env.BUILD_REPO_URL,
@@ -16,8 +15,6 @@ const config = {
   gradleWorkers: process.env.GRADLE_WORKERS || "4",
   runExpoDoctor: process.env.RUN_EXPO_DOCTOR !== "false",
   npmInstallCommand: process.env.NPM_INSTALL_COMMAND || "ci",
-  artifactBucket: process.env.ARTIFACT_BUCKET || "",
-  artifactPrefix: process.env.ARTIFACT_PREFIX || "loading-dock",
   buildId: process.env.BUILD_ID || process.env.CLOUD_RUN_EXECUTION || "build"
 }
 
@@ -45,6 +42,39 @@ function run(command, args, options = {}) {
   })
 }
 
+function runCapture(command, args, options = {}) {
+  return new Promise((resolvePromise, reject) => {
+    log(`Running: ${command} ${args.join(" ")}`)
+
+    const child = spawn(command, args, {
+      cwd: options.cwd,
+      env: options.env || process.env,
+      stdio: ["ignore", "pipe", "pipe"]
+    })
+
+    let stdout = ""
+    let stderr = ""
+
+    child.stdout.on("data", data => {
+      const text = data.toString()
+      stdout += text
+      process.stdout.write(text)
+    })
+
+    child.stderr.on("data", data => {
+      const text = data.toString()
+      stderr += text
+      process.stderr.write(text)
+    })
+
+    child.on("error", reject)
+    child.on("close", code => {
+      if (code === 0) resolvePromise({ stdout, stderr })
+      else reject(new Error(`${command} exited with code ${code}`))
+    })
+  })
+}
+
 function validateConfig() {
   if (!config.repoUrl) throw new Error("BUILD_REPO_URL is required")
 
@@ -66,6 +96,10 @@ function validateConfig() {
 
   if (!/^[a-z0-9._-]+$/i.test(config.buildId)) {
     throw new Error("BUILD_ID contains unsupported characters")
+  }
+
+  if (!process.env.EXPO_TOKEN) {
+    throw new Error("EXPO_TOKEN is required for EAS authentication")
   }
 }
 
@@ -106,22 +140,37 @@ function getRepositoryName(repoUrl) {
   return basename(cleaned) || "repository"
 }
 
-async function uploadArtifact(filePath, objectName) {
-  if (!config.artifactBucket) {
-    log(`ARTIFACT_BUCKET not configured; leaving artifact at ${filePath}`)
+async function uploadToEas(buildPath) {
+  const result = await runCapture(
+    "eas",
+    [
+      "upload",
+      "--platform", config.platform,
+      "--build-path", buildPath,
+      "--non-interactive",
+      "--json"
+    ],
+    { cwd: resolve(config.workspaceDirectory, config.buildDirectory) }
+  )
+
+  let parsed
+  try {
+    parsed = JSON.parse(result.stdout)
+  } catch {
+    log("EAS upload completed, but its JSON response could not be parsed.")
     return null
   }
 
-  const storage = new Storage()
-  await storage.bucket(config.artifactBucket).upload(filePath, {
-    destination: objectName,
-    resumable: false,
-    validation: "crc32c"
-  })
+  const url = parsed?.build?.artifacts?.buildUrl
+    || parsed?.build?.artifacts?.applicationArchiveUrl
+    || parsed?.buildUrl
+    || parsed?.url
+    || null
 
-  const uri = `gs://${config.artifactBucket}/${objectName}`
-  log(`Uploaded artifact to ${uri}`)
-  return uri
+  if (url) log(`EAS artifact URL: ${url}`)
+  else log("EAS upload completed successfully.")
+
+  return { url, response: parsed }
 }
 
 async function main() {
@@ -186,15 +235,10 @@ async function main() {
   )
 
   await access(outputFile, fsConstants.F_OK)
+  log(`Local build completed: ${outputFile}`)
 
-  const artifactObject = `${config.artifactPrefix}/${config.buildId}/${repositoryName}.apk`
-  const uploadedArtifact = await uploadArtifact(outputFile, artifactObject)
-
-  const files = await readdir(config.outputDirectory)
-  log(`Output directory contains: ${files.join(", ") || "nothing"}`)
-  log(`Build completed successfully: ${outputFile}`)
-
-  if (uploadedArtifact) log(`Artifact: ${uploadedArtifact}`)
+  await uploadToEas(outputFile)
+  log(`Build ${config.buildId} uploaded to EAS successfully.`)
 }
 
 main().catch(error => {
