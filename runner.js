@@ -122,8 +122,7 @@ function createGradleEnvironment() {
     `-Xmx${config.gradleHeapMB}m`,
     `-XX:MaxMetaspaceSize=${config.gradleMetaspaceMB}m`,
     "-XX:+UseG1GC",
-    "-XX:+HeapDumpOnOutOfMemoryError",
-    "-Dfile.encoding=UTF-8"
+    "-XX:+HeapDumpOnOutOfMemoryError"
   ].join(" ")
 
   return {
