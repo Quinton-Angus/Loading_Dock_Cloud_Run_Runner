@@ -86,7 +86,7 @@ export function createEasPreflightCommands() {
 function validateConfig() {
   if (!config.repoUrl) throw new Error("BUILD_REPO_URL is required")
 
-  if (!/^https?:\/\//i.test(config.repoUrl) && !/^git@/i.test(config.repoUrl)) {
+  if (!/^https?:\\/\\//i.test(config.repoUrl) && !/^git@/i.test(config.repoUrl)) {
     throw new Error("BUILD_REPO_URL must be an HTTP(S) or SSH Git URL")
   }
 
@@ -101,7 +101,6 @@ function validateConfig() {
   if (!/^[1-9][0-9]*$/.test(String(config.gradleWorkers))) {
     throw new Error("GRADLE_WORKERS must be a positive integer")
   }
-
 }
 
 async function installDependencies(buildDirectory) {
@@ -128,7 +127,7 @@ function createGradleEnvironment() {
   return {
     ...process.env,
     GRADLE_OPTS: [
-      `-Dorg.gradle.jvmargs=\\"${jvmArgs}\\"`,
+      `-Dorg.gradle.jvmargs="${jvmArgs}"`,
       `-Dorg.gradle.workers.max=${config.gradleWorkers}`,
       "-Dorg.gradle.parallel=true",
       "-Dorg.gradle.daemon=false"
@@ -137,7 +136,7 @@ function createGradleEnvironment() {
 }
 
 function getRepositoryName(repoUrl) {
-  const cleaned = repoUrl.replace(/\.git$/i, "").replace(/\/$/, "")
+  const cleaned = repoUrl.replace(/\\.git$/i, "").replace(/\\/$/, "")
   return basename(cleaned) || "repository"
 }
 
