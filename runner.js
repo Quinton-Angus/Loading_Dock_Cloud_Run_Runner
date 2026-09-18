@@ -86,7 +86,7 @@ export function createEasPreflightCommands() {
 function validateConfig() {
   if (!config.repoUrl) throw new Error("BUILD_REPO_URL is required")
 
-  if (!/^https?:\\/\\//i.test(config.repoUrl) && !/^git@/i.test(config.repoUrl)) {
+  if (!/^https?:\/\//i.test(config.repoUrl) && !/^git@/i.test(config.repoUrl)) {
     throw new Error("BUILD_REPO_URL must be an HTTP(S) or SSH Git URL")
   }
 
@@ -136,7 +136,7 @@ function createGradleEnvironment() {
 }
 
 function getRepositoryName(repoUrl) {
-  const cleaned = repoUrl.replace(/\\.git$/i, "").replace(/\\/$/, "")
+  const cleaned = repoUrl.replace(/\.git$/i, "").replace(/\/$/, "")
   return basename(cleaned) || "repository"
 }
 
