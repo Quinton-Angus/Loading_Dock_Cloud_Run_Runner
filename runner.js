@@ -102,10 +102,6 @@ function validateConfig() {
     throw new Error("GRADLE_WORKERS must be a positive integer")
   }
 
-  if (!/^[a-z0-9._-]+$/i.test(config.buildId)) {
-    throw new Error("BUILD_ID contains unsupported characters")
-  }
-
 }
 
 async function installDependencies(buildDirectory) {
@@ -132,7 +128,7 @@ function createGradleEnvironment() {
   return {
     ...process.env,
     GRADLE_OPTS: [
-      `-Dorg.gradle.jvmargs=\"${jvmArgs}\"`,
+      `-Dorg.gradle.jvmargs=\\"${jvmArgs}\\"`,
       `-Dorg.gradle.workers.max=${config.gradleWorkers}`,
       "-Dorg.gradle.parallel=true",
       "-Dorg.gradle.daemon=false"
@@ -235,8 +231,7 @@ async function main() {
       "--profile", config.profile,
       "--local",
       "--non-interactive",
-      "--output", outputFile,
-      "--verbose"
+      "--output", outputFile
     ],
     {
       cwd: buildDirectory,
