@@ -11,9 +11,6 @@ const config = {
   profile: process.env.BUILD_PROFILE || "preview",
   outputDirectory: process.env.BUILD_OUTPUT_DIRECTORY || "/workspace/output",
   workspaceDirectory: process.env.BUILD_WORKSPACE_DIRECTORY || "/workspace/source",
-  gradleHeapMB: process.env.GRADLE_HEAP_MB || "6144",
-  gradleMetaspaceMB: process.env.GRADLE_METASPACE_MB || "1024",
-  gradleWorkers: process.env.GRADLE_WORKERS || "4",
   runExpoDoctor: process.env.RUN_EXPO_DOCTOR !== "false",
   npmInstallCommand: process.env.NPM_INSTALL_COMMAND || "ci",
   buildId: process.env.BUILD_ID || process.env.CLOUD_RUN_EXECUTION || "build"
@@ -88,18 +85,6 @@ function validateConfig() {
 
   if (!/^https?:\/\//i.test(config.repoUrl) && !/^git@/i.test(config.repoUrl)) {
     throw new Error("BUILD_REPO_URL must be an HTTP(S) or SSH Git URL")
-  }
-
-  if (!/^[0-9]+$/.test(String(config.gradleHeapMB)) || Number(config.gradleHeapMB) < 512) {
-    throw new Error("GRADLE_HEAP_MB must be an integer of at least 512 MB")
-  }
-
-  if (!/^[0-9]+$/.test(String(config.gradleMetaspaceMB)) || Number(config.gradleMetaspaceMB) < 128) {
-    throw new Error("GRADLE_METASPACE_MB must be an integer of at least 128 MB")
-  }
-
-  if (!/^[1-9][0-9]*$/.test(String(config.gradleWorkers))) {
-    throw new Error("GRADLE_WORKERS must be a positive integer")
   }
 
 }
@@ -181,9 +166,6 @@ async function main() {
   log(`Execution: ${process.env.CLOUD_RUN_EXECUTION || "local"}`)
   log(`Repository: ${config.repoUrl}`)
   log(`Build directory: ${config.buildDirectory}`)
-  log(`Gradle heap: ${config.gradleHeapMB} MB`)
-  log(`Gradle metaspace: ${config.gradleMetaspaceMB} MB`)
-  log(`Gradle workers: ${config.gradleWorkers}`)
 
   await rm(config.workspaceDirectory, { recursive: true, force: true })
   await mkdir(config.workspaceDirectory, { recursive: true })
@@ -234,8 +216,7 @@ async function main() {
       "--output", outputFile
     ],
     {
-      cwd: buildDirectory,
-      env: createGradleEnvironment()
+      cwd: buildDirectory
     }
   )
 
