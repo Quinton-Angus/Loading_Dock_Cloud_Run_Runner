@@ -106,9 +106,6 @@ function validateConfig() {
     throw new Error("BUILD_ID contains unsupported characters")
   }
 
-  if (!process.env.EXPO_TOKEN) {
-    throw new Error("EXPO_TOKEN is required for EAS authentication")
-  }
 }
 
 async function installDependencies(buildDirectory) {
