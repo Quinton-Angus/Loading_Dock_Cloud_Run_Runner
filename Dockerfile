@@ -1,17 +1,38 @@
-FROM node:20-bookworm
+FROM ubuntu:24.04
 
-RUN apt-get update && apt-get install -y \
-    git \
-    openjdk-17-jdk \
-    unzip \
-    curl \
-    wget \
-    && rm -rf /var/lib/apt/lists/*
+ARG NODE_VERSION=20.19.4
 
+ENV DEBIAN_FRONTEND=noninteractive
 ENV ANDROID_HOME=/opt/android-sdk
 ENV ANDROID_SDK_ROOT=/opt/android-sdk
-ENV PATH=$PATH:$ANDROID_HOME/cmdline-tools/latest/bin:$ANDROID_HOME/platform-tools
+ENV ANDROID_NDK_VERSION=27.1.12297006
+ENV ANDROID_NDK_HOME=/opt/android-sdk/ndk/27.1.12297006
+ENV ANDROID_NDK_ROOT=/opt/android-sdk/ndk/27.1.12297006
+ENV JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64
+ENV PATH=/usr/local/bin:/opt/android-sdk/cmdline-tools/latest/bin:/opt/android-sdk/platform-tools:/opt/android-sdk/emulator:/opt/android-sdk/cmake/3.22.1/bin:$PATH
 ENV NODE_OPTIONS=--max-old-space-size=512
+
+RUN apt-get update && apt-get install -y \
+    ca-certificates \
+    curl \
+    git \
+    wget \
+    unzip \
+    zip \
+    build-essential \
+    cmake \
+    ninja-build \
+    python3 \
+    python3-pip \
+    openjdk-17-jdk \
+    file \
+    && rm -rf /var/lib/apt/lists/*
+
+# Match the Node.js version used by the Expo SDK 54 EAS Android image.
+RUN curl -fsSL https://nodejs.org/dist/v$NODE_VERSION/node-v$NODE_VERSION-linux-x64.tar.xz \
+    | tar -xJ --strip-components=1 -C /usr/local
+
+RUN node --version && npm --version && java -version && cmake --version && ninja --version
 
 RUN mkdir -p ${ANDROID_HOME}/cmdline-tools
 
@@ -23,10 +44,13 @@ RUN wget -q https://dl.google.com/android/repository/commandlinetools-linux-1311
 
 RUN yes | sdkmanager --licenses > /dev/null || true
 
+# Match the core Android toolchain used by the Expo SDK 54 EAS image.
 RUN sdkmanager \
     "platform-tools" \
     "platforms;android-35" \
-    "build-tools;35.0.0"
+    "build-tools;35.0.0" \
+    "ndk;27.1.12297006" \
+    "cmake;3.22.1"
 
 WORKDIR /runner
 
@@ -36,7 +60,6 @@ RUN npm i -g eas-cli@latest
 
 COPY . .
 
-RUN mkdir -p /builds/output
-RUN mkdir -p /build
+RUN mkdir -p /builds/output /build
 
 ENTRYPOINT ["node", "runner.js"]
