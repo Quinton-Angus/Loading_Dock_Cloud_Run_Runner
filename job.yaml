@@ -1,7 +1,7 @@
 apiVersion: run.googleapis.com/v1
 kind: Job
 metadata:
-  name: loading-dock-builder
+  name: loading-dock-runner
   annotations:
     run.googleapis.com/launch-stage: BETA
 spec:
@@ -39,4 +39,4 @@ spec:
             - name: build-tmp
               emptyDir:
                 medium: Disk
-                sizeLimit: 32Gi
+                sizeLimit: 10Gi
