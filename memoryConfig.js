@@ -39,6 +39,6 @@ export function createGradleJvmArgsProperty(requestedMemory) {
 export function createGradleEnvironment(requestedMemory, baseEnvironment = process.env) {
   return {
     ...baseEnvironment,
-    GRADLE_OPTS: `-Dorg.gradle.jvmargs="\${createGradleJvmArgsProperty(requestedMemory)}" -Dorg.gradle.parallel=true -Dorg.gradle.daemon=false`
+    GRADLE_OPTS: `-Dorg.gradle.jvmargs="${createGradleJvmArgsProperty(requestedMemory)}" -Dorg.gradle.parallel=true -Dorg.gradle.daemon=false`
   }
 }
