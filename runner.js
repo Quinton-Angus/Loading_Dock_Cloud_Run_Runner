@@ -3,136 +3,43 @@ import { mkdir, rm, access } from "node:fs/promises"
 import { constants as fsConstants } from "node:fs"
 import { basename, join, resolve } from "node:path"
 import { pathToFileURL } from "node:url"
+import { createGradleEnvironment, validateJavaHeapSize } from "./memoryConfig.js"
 
 const config = {
   repoUrl: process.env.BUILD_REPO_URL,
   buildDirectory: process.env.BUILD_DIRECTORY || ".",
-  platform: process.env.BUILD_PLATFORM || "android",
-  profile: process.env.BUILD_PROFILE || "preview",
-  outputDirectory: process.env.BUILD_OUTPUT_DIRECTORY || "/workspace/output",
-  workspaceDirectory: process.env.BUILD_WORKSPACE_DIRECTORY || "/workspace/source",
-  gradleHeapMB: process.env.GRADLE_HEAP_MB || "4096",
-  gradleMetaspaceMB: process.env.GRADLE_METASPACE_MB || "1024",
-  gradleWorkers: process.env.GRADLE_WORKERS || "1",
+  outputDirectory: process.env.BUILD_OUTPUT_DIRECTORY || "/builds/output",
+  workspaceDirectory: process.env.BUILD_WORKSPACE_DIRECTORY || "/build",
+  maxRAMusage: process.env.BUILD_MAX_RAM_USAGE || "4g",
   runExpoDoctor: process.env.RUN_EXPO_DOCTOR !== "false",
-  npmInstallCommand: process.env.NPM_INSTALL_COMMAND || "ci",
   buildId: process.env.BUILD_ID || process.env.CLOUD_RUN_EXECUTION || "build"
 }
 
 function log(message) {
-  console.log(`[RUNNER] ${message}`)
+  console.log(`[LOG] ${message}`)
 }
 
 function run(command, args, options = {}) {
   return new Promise((resolvePromise, reject) => {
     log(`Running: ${command} ${args.join(" ")}`)
-
     const child = spawn(command, args, {
       cwd: options.cwd,
       env: options.env || process.env,
       stdio: ["ignore", "pipe", "pipe"]
     })
-
     child.stdout.on("data", data => process.stdout.write(data))
     child.stderr.on("data", data => process.stderr.write(data))
     child.on("error", reject)
-    child.on("close", code => {
-      if (code === 0) resolvePromise()
-      else reject(new Error(`${command} exited with code ${code}`))
-    })
+    child.on("close", code => code === 0 ? resolvePromise() : reject(new Error(`${command} exited with code ${code}`)))
   })
-}
-
-function runCapture(command, args, options = {}) {
-  return new Promise((resolvePromise, reject) => {
-    log(`Running: ${command} ${args.join(" ")}`)
-
-    const child = spawn(command, args, {
-      cwd: options.cwd,
-      env: options.env || process.env,
-      stdio: ["ignore", "pipe", "pipe"]
-    })
-
-    let stdout = ""
-    let stderr = ""
-
-    child.stdout.on("data", data => {
-      const text = data.toString()
-      stdout += text
-      process.stdout.write(text)
-    })
-
-    child.stderr.on("data", data => {
-      const text = data.toString()
-      stderr += text
-      process.stderr.write(text)
-    })
-
-    child.on("error", reject)
-    child.on("close", code => {
-      if (code === 0) resolvePromise({ stdout, stderr })
-      else reject(new Error(`${command} exited with code ${code}`))
-    })
-  })
-}
-
-export function createEasPreflightCommands() {
-  return [
-    ["eas", ["whoami"]],
-    ["eas", ["project:info"]]
-  ]
 }
 
 function validateConfig() {
   if (!config.repoUrl) throw new Error("BUILD_REPO_URL is required")
-
   if (!/^https?:\/\//i.test(config.repoUrl) && !/^git@/i.test(config.repoUrl)) {
     throw new Error("BUILD_REPO_URL must be an HTTP(S) or SSH Git URL")
   }
-
-  if (!/^[0-9]+$/.test(String(config.gradleHeapMB)) || Number(config.gradleHeapMB) < 512) {
-    throw new Error("GRADLE_HEAP_MB must be an integer of at least 512 MB")
-  }
-
-  if (!/^[0-9]+$/.test(String(config.gradleMetaspaceMB)) || Number(config.gradleMetaspaceMB) < 128) {
-    throw new Error("GRADLE_METASPACE_MB must be an integer of at least 128 MB")
-  }
-
-  if (!/^[1-9][0-9]*$/.test(String(config.gradleWorkers))) {
-    throw new Error("GRADLE_WORKERS must be a positive integer")
-  }
-}
-
-async function installDependencies(buildDirectory) {
-  const hasLockFile = await Promise.any([
-    access(join(buildDirectory, "package-lock.json"), fsConstants.F_OK),
-    access(join(buildDirectory, "npm-shrinkwrap.json"), fsConstants.F_OK)
-  ]).then(() => true).catch(() => false)
-
-  const npmCommand = hasLockFile && config.npmInstallCommand === "ci" ? "ci" : "install"
-
-  await run("npm", [npmCommand, "--prefer-offline", "--no-audit", "--no-fund"], {
-    cwd: buildDirectory
-  })
-}
-
-function createGradleEnvironment() {
-  const jvmArgs = [
-    `-Xmx${config.gradleHeapMB}m`,
-    `-XX:MaxMetaspaceSize=${config.gradleMetaspaceMB}m`,
-    "-XX:+UseG1GC",
-    "-XX:+HeapDumpOnOutOfMemoryError"
-  ].join(" ")
-
-  return {
-    ...process.env,
-    GRADLE_OPTS: [
-      `-Dorg.gradle.jvmargs="${jvmArgs}"`,
-      `-Dorg.gradle.workers.max=${config.gradleWorkers}`,
-      "-Dorg.gradle.parallel=true",
-      "-Dorg.gradle.daemon=false"
-    ].join(" ")
-  }
+  config.maxRAMusage = validateJavaHeapSize(config.maxRAMusage)
 }
 
 function getRepositoryName(repoUrl) {
@@ -140,170 +47,58 @@ function getRepositoryName(repoUrl) {
   return basename(cleaned) || "repository"
 }
 
-async function uploadToEas(buildPath) {
-  const result = await runCapture(
-    "eas",
-    [
-      "upload",
-      "--platform", config.platform,
-      "--build-path", buildPath,
-      "--non-interactive",
-      "--json"
-    ],
-    { cwd: resolve(config.workspaceDirectory, config.buildDirectory) }
-  )
-
-  let parsed
-  try {
-    parsed = JSON.parse(result.stdout)
-  } catch {
-    log("EAS upload completed, but its JSON response could not be parsed.")
-    return null
-  }
-
-  const url = parsed?.build?.artifacts?.buildUrl
-    || parsed?.build?.artifacts?.applicationArchiveUrl
-    || parsed?.buildUrl
-    || parsed?.url
-    || null
-
-  if (url) log(`EAS artifact URL: ${url}`)
-  else log("EAS upload completed successfully.")
-
-  return { url, response: parsed }
-}
-
-
-async function readTextFile(path) {
-  try {
-    const { readFile } = await import("node:fs/promises")
-    return await readFile(path, "utf8")
-  } catch {
-    return null
-  }
-}
-
-async function runDiagnosticCommand(command, args) {
-  try {
-    const result = await runCapture(command, args)
-    return result.stdout.trim()
-  } catch (error) {
-    return `<diagnostic command failed: ${error.message}>`
-  }
-}
-
-async function dumpDiagnostics(error = null) {
-  console.error("========================================")
-  console.error("[RUNNER] BUILD FAILURE DIAGNOSTICS")
-  console.error("========================================")
-
-  if (error) {
-    console.error("[ERROR] name:", error.name)
-    console.error("[ERROR] message:", error.message)
-    console.error("[ERROR] code:", error.code ?? "<none>")
-    console.error("[ERROR] signal:", error.signal ?? "<none>")
-    console.error("[ERROR] status:", error.status ?? "<none>")
-    console.error("[ERROR] exitCode:", error.exitCode ?? "<none>")
-    console.error("[ERROR] stack:")
-    console.error(error.stack ?? "<none>")
-  }
-
-  console.error("[DIAGNOSTIC] Node memory:")
-  console.error(process.memoryUsage())
-
-  console.error("[DIAGNOSTIC] cgroup memory.current:", await readTextFile("/sys/fs/cgroup/memory.current") ?? "<unavailable>")
-  console.error("[DIAGNOSTIC] cgroup memory.max:", await readTextFile("/sys/fs/cgroup/memory.max") ?? "<unavailable>")
-  console.error("[DIAGNOSTIC] cgroup memory.events:")
-  console.error(await readTextFile("/sys/fs/cgroup/memory.events") ?? "<unavailable>")
-  console.error("[DIAGNOSTIC] free -h:")
-  console.error(await runDiagnosticCommand("free", ["-h"]))
-  console.error("[DIAGNOSTIC] ps memory:")
-  console.error(await runDiagnosticCommand("ps", ["aux", "--sort=-%mem"]))
-  console.error("[DIAGNOSTIC] Recent Gradle daemon log tails:")
-  console.error(await runDiagnosticCommand("sh", ["-c", "for f in /root/.gradle/daemon/*/daemon-*.out.log; do echo "--- $f ---"; tail -200 "$f"; done"]))
-  console.error("========================================")
+async function installDependencies(buildDirectory) {
+  log("Installing npm packages")
+  await run("npm", ["i"], { cwd: buildDirectory })
 }
 
 async function main() {
   validateConfig()
-
-  log(`Cloud Run job: ${process.env.CLOUD_RUN_JOB || "local"}`)
-  log(`Execution: ${process.env.CLOUD_RUN_EXECUTION || "local"}`)
-  log(`Repository: ${config.repoUrl}`)
-  log(`Build directory: ${config.buildDirectory}`)
-  log(`Gradle heap: ${config.gradleHeapMB} MB`)
-  log(`Gradle metaspace: ${config.gradleMetaspaceMB} MB`)
-  log(`Gradle workers: ${config.gradleWorkers}`)
+  log("Build command received. processing request, please wait...")
+  log(`Requested build url is ${config.repoUrl}`)
+  log(`Build directory set as: "${config.buildDirectory}"`)
+  log(`Requested maximum Java heap size is: ${config.maxRAMusage}`)
 
   await rm(config.workspaceDirectory, { recursive: true, force: true })
   await mkdir(config.workspaceDirectory, { recursive: true })
   await mkdir(config.outputDirectory, { recursive: true })
 
-  await run("git", [
-    "clone",
-    "--depth", "1",
-    "--single-branch",
-    config.repoUrl,
-    config.workspaceDirectory
-  ])
+  log(`Cloning "${config.repoUrl}" into build directory`)
+  await run("git", ["clone", config.repoUrl, config.workspaceDirectory])
 
-  const buildDirectory = resolve(config.workspaceDirectory, config.buildDirectory)
   const workspaceRoot = resolve(config.workspaceDirectory)
-
-  if (!buildDirectory.startsWith(`${workspaceRoot}/`) && buildDirectory !== workspaceRoot) {
+  const workingDirectory = resolve(workspaceRoot, config.buildDirectory)
+  if (!workingDirectory.startsWith(`${workspaceRoot}/`) && workingDirectory !== workspaceRoot) {
     throw new Error("BUILD_DIRECTORY must stay inside the cloned repository")
   }
 
-  await access(buildDirectory, fsConstants.F_OK)
-  log(`Build working directory: ${buildDirectory}`)
+  await access(workingDirectory, fsConstants.F_OK)
+  log(`Using generated working build directory: "${workingDirectory}"`)
 
-  await installDependencies(buildDirectory)
+  await installDependencies(workingDirectory)
+  if (config.runExpoDoctor) await run("npx", ["expo-doctor"], { cwd: workingDirectory })
 
-  if (config.runExpoDoctor) {
-    await run("npx", ["expo-doctor"], { cwd: buildDirectory })
-  }
-
-  for (const [command, args] of createEasPreflightCommands()) {
-    await run(command, args, { cwd: buildDirectory })
-  }
+  log("Build check passed.")
+  log(`Using maximum Java heap size from build request: ${config.maxRAMusage}`)
 
   const repositoryName = getRepositoryName(config.repoUrl)
-  const outputFile = join(
-    config.outputDirectory,
-    `${repositoryName}-${config.buildId}.apk`
-  )
+  const outputFile = join(config.outputDirectory, `loadingDockOutput.${repositoryName}.${config.buildId}.apk`)
 
-  try {
-    await run(
-      "eas",
-      [
-        "build",
-        "--platform", config.platform,
-        "--profile", config.profile,
-        "--local",
-        "--non-interactive",
-        "--output", outputFile
-      ],
-      {
-        cwd: buildDirectory,
-        env: createGradleEnvironment()
-      }
-    )
-  } catch (error) {
-    await dumpDiagnostics(error)
-    throw error
-  }
+  log("Beginning EAS build")
+  await run("eas", [
+    "build", "--platform", "android", "--profile", "preview", "--local", "--output", outputFile
+  ], {
+    cwd: workingDirectory,
+    env: createGradleEnvironment(config.maxRAMusage)
+  })
 
   await access(outputFile, fsConstants.F_OK)
-  log(`Local build completed: ${outputFile}`)
-
-  await uploadToEas(outputFile)
-  log(`Build ${config.buildId} uploaded to EAS successfully.`)
+  log(`Build request successful, file created at: "${outputFile}". Build successful.`)
 }
 
 if (import.meta.url === pathToFileURL(process.argv[1]).href) {
   main().catch(error => {
-    console.error(`[RUNNER] Build runner failed: ${error.message}`)
+    console.error(`[ERROR] Build runner failed: ${error.message}`)
     console.error(error)
     process.exitCode = 1
   })
