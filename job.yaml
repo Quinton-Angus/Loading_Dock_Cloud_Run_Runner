@@ -19,19 +19,13 @@ spec:
                 - name: BUILD_PROFILE
                   value: preview
                 - name: BUILD_OUTPUT_DIRECTORY
-                  value: /workspace/output
+                  value: /builds/output
                 - name: BUILD_WORKSPACE_DIRECTORY
-                  value: /workspace/source
-                - name: GRADLE_HEAP_MB
-                  value: "6144"
-                - name: GRADLE_METASPACE_MB
-                  value: "1024"
-                - name: GRADLE_WORKERS
-                  value: "4"
+                  value: /build
+                - name: BUILD_MAX_RAM_USAGE
+                  value: "4g"
                 - name: RUN_EXPO_DOCTOR
                   value: "true"
-                - name: NPM_INSTALL_COMMAND
-                  value: ci
               resources:
                 limits:
                   cpu: "4"
