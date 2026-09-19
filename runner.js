@@ -173,6 +173,58 @@ async function uploadToEas(buildPath) {
   return { url, response: parsed }
 }
 
+
+async function readTextFile(path) {
+  try {
+    const { readFile } = await import("node:fs/promises")
+    return await readFile(path, "utf8")
+  } catch {
+    return null
+  }
+}
+
+async function runDiagnosticCommand(command, args) {
+  try {
+    const result = await runCapture(command, args)
+    return result.stdout.trim()
+  } catch (error) {
+    return `<diagnostic command failed: ${error.message}>`
+  }
+}
+
+async function dumpDiagnostics(error = null) {
+  console.error("========================================")
+  console.error("[RUNNER] BUILD FAILURE DIAGNOSTICS")
+  console.error("========================================")
+
+  if (error) {
+    console.error("[ERROR] name:", error.name)
+    console.error("[ERROR] message:", error.message)
+    console.error("[ERROR] code:", error.code ?? "<none>")
+    console.error("[ERROR] signal:", error.signal ?? "<none>")
+    console.error("[ERROR] status:", error.status ?? "<none>")
+    console.error("[ERROR] exitCode:", error.exitCode ?? "<none>")
+    console.error("[ERROR] stack:")
+    console.error(error.stack ?? "<none>")
+  }
+
+  console.error("[DIAGNOSTIC] cgroup memory.current:", await readTextFile("/sys/fs/cgroup/memory.current") ?? "<unavailable>")
+  console.error("[DIAGNOSTIC] cgroup memory.max:", await readTextFile("/sys/fs/cgroup/memory.max") ?? "<unavailable>")
+  console.error("[DIAGNOSTIC] cgroup memory.events:")
+  console.error(await readTextFile("/sys/fs/cgroup/memory.events") ?? "<unavailable>")
+  console.error("[DIAGNOSTIC] cgroup memory.stat:")
+  console.error(await readTextFile("/sys/fs/cgroup/memory.stat") ?? "<unavailable>")
+  console.error("[DIAGNOSTIC] free -h:")
+  console.error(await runDiagnosticCommand("free", ["-h"]))
+  console.error("[DIAGNOSTIC] ps memory:")
+  console.error(await runDiagnosticCommand("ps", ["aux", "--sort=-%mem"]))
+  console.error("[DIAGNOSTIC] Gradle daemon logs:")
+  console.error(await runDiagnosticCommand("sh", ["-c", "for f in /root/.gradle/daemon/*/daemon-*.out.log; do echo \"--- $f ---\"; tail -200 \"$f\"; done"]))
+  console.error("[DIAGNOSTIC] JVM crash logs:")
+  console.error(await runDiagnosticCommand("sh", ["-c", "find /root /tmp /workspace -type f \( -name 'hs_err_pid*.log' -o -name 'replay_pid*.log' \) -print -exec tail -100 {} \; 2>/dev/null || true"))
+  console.error("========================================")
+}
+
 async function main() {
   validateConfig()
 
@@ -222,21 +274,26 @@ async function main() {
     `${repositoryName}-${config.buildId}.apk`
   )
 
-  await run(
-    "eas",
-    [
-      "build",
-      "--platform", config.platform,
-      "--profile", config.profile,
-      "--local",
-      "--non-interactive",
-      "--output", outputFile
-    ],
-    {
-      cwd: buildDirectory,
-      env: createGradleEnvironment()
-    }
-  )
+  try {
+    await run(
+      "eas",
+      [
+        "build",
+        "--platform", config.platform,
+        "--profile", config.profile,
+        "--local",
+        "--non-interactive",
+        "--output", outputFile
+      ],
+      {
+        cwd: buildDirectory,
+        env: createGradleEnvironment()
+      }
+    )
+  } catch (error) {
+    await dumpDiagnostics(error)
+    throw error
+  }
 
   await access(outputFile, fsConstants.F_OK)
   log(`Local build completed: ${outputFile}`)
