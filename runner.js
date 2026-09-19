@@ -208,20 +208,19 @@ async function dumpDiagnostics(error = null) {
     console.error(error.stack ?? "<none>")
   }
 
+  console.error("[DIAGNOSTIC] Node memory:")
+  console.error(process.memoryUsage())
+
   console.error("[DIAGNOSTIC] cgroup memory.current:", await readTextFile("/sys/fs/cgroup/memory.current") ?? "<unavailable>")
   console.error("[DIAGNOSTIC] cgroup memory.max:", await readTextFile("/sys/fs/cgroup/memory.max") ?? "<unavailable>")
   console.error("[DIAGNOSTIC] cgroup memory.events:")
   console.error(await readTextFile("/sys/fs/cgroup/memory.events") ?? "<unavailable>")
-  console.error("[DIAGNOSTIC] cgroup memory.stat:")
-  console.error(await readTextFile("/sys/fs/cgroup/memory.stat") ?? "<unavailable>")
   console.error("[DIAGNOSTIC] free -h:")
   console.error(await runDiagnosticCommand("free", ["-h"]))
   console.error("[DIAGNOSTIC] ps memory:")
   console.error(await runDiagnosticCommand("ps", ["aux", "--sort=-%mem"]))
-  console.error("[DIAGNOSTIC] Gradle daemon logs:")
-  console.error(await runDiagnosticCommand("sh", ["-c", "for f in /root/.gradle/daemon/*/daemon-*.out.log; do echo \"--- $f ---\"; tail -200 \"$f\"; done"]))
-  console.error("[DIAGNOSTIC] JVM crash logs:")
-  console.error(await runDiagnosticCommand("sh", ["-c", "find /root /tmp /workspace -type f \( -name 'hs_err_pid*.log' -o -name 'replay_pid*.log' \) -print -exec tail -100 {} \; 2>/dev/null || true"))
+  console.error("[DIAGNOSTIC] Recent Gradle daemon log tails:")
+  console.error(await runDiagnosticCommand("sh", ["-c", "for f in /root/.gradle/daemon/*/daemon-*.out.log; do echo "--- $f ---"; tail -200 "$f"; done"]))
   console.error("========================================")
 }
 
