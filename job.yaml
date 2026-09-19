@@ -28,15 +28,7 @@ spec:
                   value: "4g"
                 - name: RUN_EXPO_DOCTOR
                   value: "true"
-              volumeMounts:
-                - name: build-tmp
-                  mountPath: /tmp
               resources:
                 limits:
                   cpu: "4"
                   memory: 16Gi
-          volumes:
-            - name: build-tmp
-              emptyDir:
-                medium: Disk
-                sizeLimit: 10Gi
