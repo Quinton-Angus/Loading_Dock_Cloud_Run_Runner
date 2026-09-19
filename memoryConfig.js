@@ -10,14 +10,14 @@ export const NODE_OPTIONS = `--max-old-space-size=${MEMORY_CONFIG.nodeHeapMB}`
 
 export function validateJavaHeapSize(value) {
   const normalized = String(value).trim().toLowerCase()
-  const match = normalized.match(/^(\\d+(?:\\.\\d+)?)(m|g)$/)
+  const match = normalized.match(/^(\d+(?:\.\d+)?)(m|g)$/)
   if (!match || Number(match[1]) <= 0) throw new Error(`Invalid Java heap size: ${value}`)
   return normalized
 }
 
 export function resolveGradleHeapMB(requestedMemory) {
   if (!requestedMemory) return MEMORY_CONFIG.gradleHeapMB
-  const match = String(requestedMemory).trim().toLowerCase().match(/^(\\d+(?:\\.\\d+)?)(m|g)$/)
+  const match = String(requestedMemory).trim().toLowerCase().match(/^(\d+(?:\.\d+)?)(m|g)$/)
   if (!match) return MEMORY_CONFIG.gradleHeapMB
   return Math.floor(Number(match[1]) * (match[2] === "g" ? 1024 : 1))
 }
@@ -39,6 +39,6 @@ export function createGradleJvmArgsProperty(requestedMemory) {
 export function createGradleEnvironment(requestedMemory, baseEnvironment = process.env) {
   return {
     ...baseEnvironment,
-    GRADLE_OPTS: `-Dorg.gradle.jvmargs=\"${createGradleJvmArgsProperty(requestedMemory)}\" -Dorg.gradle.parallel=true -Dorg.gradle.daemon=false`
+    GRADLE_OPTS: `-Dorg.gradle.jvmargs="\${createGradleJvmArgsProperty(requestedMemory)}" -Dorg.gradle.parallel=true -Dorg.gradle.daemon=false`
   }
 }
