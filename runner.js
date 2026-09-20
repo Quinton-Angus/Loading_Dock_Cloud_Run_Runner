@@ -89,10 +89,14 @@ async function main() {
   await resetDirectoryContents(config.workspaceDirectory)
   await resetDirectoryContents(config.outputDirectory)
 
-  log(`Cloning "${config.repoUrl}" into existing build directory`)
-  await run("git", ["clone", config.repoUrl, "."], { cwd: config.workspaceDirectory })
+  const repositoryDirectory = join(config.workspaceDirectory, ".repository")
 
-  const workspaceRoot = resolve(config.workspaceDirectory)
+  await resetDirectoryContents(repositoryDirectory)
+
+  log(`Cloning "${config.repoUrl}" into repository workspace`)
+  await run("git", ["clone", config.repoUrl, repositoryDirectory])
+
+  const workspaceRoot = resolve(repositoryDirectory)
   const workingDirectory = resolve(workspaceRoot, config.buildDirectory)
   if (!workingDirectory.startsWith(`${workspaceRoot}/`) && workingDirectory !== workspaceRoot) {
     throw new Error("BUILD_DIRECTORY must stay inside the cloned repository")
