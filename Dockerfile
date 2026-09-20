@@ -60,12 +60,7 @@ RUN npm i -g eas-cli@latest
 
 COPY . .
 
-RUN mkdir -p /builds/output /build /tmp/tailscale /var/run/tailscale /var/cache/tailscale /var/lib/tailscale
-
-# Cloud Run does not provide /dev/net/tun, so Tailscale runs in userspace
-# networking mode and exposes the tailnet through a local SOCKS5 proxy.
-COPY --from=docker.io/tailscale/tailscale:stable /usr/local/bin/tailscaled /usr/local/bin/tailscaled
-COPY --from=docker.io/tailscale/tailscale:stable /usr/local/bin/tailscale /usr/local/bin/tailscale
+RUN mkdir -p /builds/output /build
 
 COPY start.sh /runner/start.sh
 RUN chmod +x /runner/start.sh
