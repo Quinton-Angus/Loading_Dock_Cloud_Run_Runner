@@ -16,7 +16,7 @@ spec:
           maxRetries: 0
           timeoutSeconds: 3600
           containers:
-            - image: europe-north1-docker.pkg.dev/main-api-server/loading-dock/loading-dock-builder:latest
+            - image: europe-north1-docker.pkg.dev/main-api-server/build-dock/build-dock-runner:latest
               env:
                 - name: BUILD_PLATFORM
                   value: android
@@ -47,8 +47,6 @@ spec:
                   mountPath: /root/.gradle
                 - name: build-disk
                   mountPath: /root/.npm
-                - name: build-disk
-                  mountPath: /tmp
           volumes:
             - name: build-disk
               emptyDir:
