@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process"
-import { mkdir, rm, access } from "node:fs/promises"
+import { mkdir, rm, access, readdir } from "node:fs/promises"
 import { constants as fsConstants } from "node:fs"
 import { basename, join, resolve } from "node:path"
 import { pathToFileURL } from "node:url"
@@ -69,6 +69,15 @@ async function installDependencies(buildDirectory) {
   await run("npm", ["i"], { cwd: buildDirectory })
 }
 
+async function resetDirectoryContents(directory) {
+  await mkdir(directory, { recursive: true })
+  const entries = await readdir(directory)
+
+  for (const entry of entries) {
+    await rm(join(directory, entry), { recursive: true, force: true })
+  }
+}
+
 async function main() {
   validateConfig()
   log("Build command received. processing request, please wait...")
@@ -77,9 +86,8 @@ async function main() {
   log(`Requested platform/profile: ${config.platform}/${config.profile}`)
   log(`Requested maximum Java heap size is: ${config.maxRAMusage}`)
 
-  await rm(config.workspaceDirectory, { recursive: true, force: true })
-  await mkdir(config.workspaceDirectory, { recursive: true })
-  await mkdir(config.outputDirectory, { recursive: true })
+  await resetDirectoryContents(config.workspaceDirectory)
+  await resetDirectoryContents(config.outputDirectory)
 
   log(`Cloning "${config.repoUrl}" into build directory`)
   await run("git", ["clone", config.repoUrl, config.workspaceDirectory])
