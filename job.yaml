@@ -26,7 +26,7 @@ spec:
                   value: /build
                 - name: BUILD_MAX_RAM_USAGE
                   value: "4g"
-                                - name: RUN_EXPO_DOCTOR
+                - name: RUN_EXPO_DOCTOR
                   value: "true"
               resources:
                 limits:
