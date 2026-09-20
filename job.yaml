@@ -2,6 +2,10 @@ apiVersion: run.googleapis.com/v1
 kind: Job
 metadata:
   name: loading-dock-builder
+  labels:
+    cloud.googleapis.com/location: europe-north1
+  annotations:
+    run.googleapis.com/launch-stage: BETA
 spec:
   template:
     spec:
@@ -35,16 +39,18 @@ spec:
                   cpu: "4"
                   memory: 16Gi
               volumeMounts:
-                - name: build-tmp
+                - name: build-disk
                   mountPath: /build
-                - name: build-tmp
+                - name: build-disk
+                  mountPath: /builds
+                - name: build-disk
                   mountPath: /root/.gradle
-                - name: build-tmp
+                - name: build-disk
                   mountPath: /root/.npm
-                - name: build-tmp
+                - name: build-disk
                   mountPath: /tmp
           volumes:
-            - name: build-tmp
+            - name: build-disk
               emptyDir:
-                medium: Memory
-                sizeLimit: 8Gi
+                medium: Disk
+                sizeLimit: 10Gi
