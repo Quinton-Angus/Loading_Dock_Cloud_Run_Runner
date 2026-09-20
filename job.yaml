@@ -21,14 +21,28 @@ spec:
                 - name: BUILD_PROFILE
                   value: preview
                 - name: BUILD_OUTPUT_DIRECTORY
-                  value: /builds/output
+                  value: /build/output
                 - name: BUILD_WORKSPACE_DIRECTORY
                   value: /build
                 - name: BUILD_MAX_RAM_USAGE
                   value: "4g"
+                - name: TMPDIR
+                  value: /build/tmp
+                - name: EAS_LOCAL_BUILD_WORKINGDIR
+                  value: /build/eas
+                - name: EAS_LOCAL_BUILD_ARTIFACTS_DIR
+                  value: /build/output
                 - name: RUN_EXPO_DOCTOR
                   value: "true"
               resources:
                 limits:
                   cpu: "4"
                   memory: 16Gi
+              volumeMounts:
+                - name: build-disk
+                  mountPath: /build
+          volumes:
+            - name: build-disk
+              emptyDir:
+                medium: Disk
+                sizeLimit: 10Gi
