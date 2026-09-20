@@ -26,13 +26,7 @@ spec:
                   value: /build
                 - name: BUILD_MAX_RAM_USAGE
                   value: "4g"
-                - name: TMPDIR
-                  value: /build/tmp
-                - name: EAS_LOCAL_BUILD_WORKINGDIR
-                  value: /build/eas
-                - name: EAS_LOCAL_BUILD_ARTIFACTS_DIR
-                  value: /build/output
-                - name: RUN_EXPO_DOCTOR
+                                - name: RUN_EXPO_DOCTOR
                   value: "true"
               resources:
                 limits:
@@ -41,6 +35,10 @@ spec:
               volumeMounts:
                 - name: build-disk
                   mountPath: /build
+                - name: build-disk
+                  mountPath: /root/.gradle
+                - name: build-disk
+                  mountPath: /root/.npm
           volumes:
             - name: build-disk
               emptyDir:
