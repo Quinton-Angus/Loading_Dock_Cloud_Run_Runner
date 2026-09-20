@@ -89,8 +89,8 @@ async function main() {
   await resetDirectoryContents(config.workspaceDirectory)
   await resetDirectoryContents(config.outputDirectory)
 
-  log(`Cloning "${config.repoUrl}" into build directory`)
-  await run("git", ["clone", config.repoUrl, config.workspaceDirectory])
+  log(`Cloning "${config.repoUrl}" into existing build directory`)
+  await run("git", ["clone", config.repoUrl, "."], { cwd: config.workspaceDirectory })
 
   const workspaceRoot = resolve(config.workspaceDirectory)
   const workingDirectory = resolve(workspaceRoot, config.buildDirectory)
