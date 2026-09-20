@@ -15,7 +15,9 @@ The reference Cloud Run Job is configured for:
 - 1 hour task timeout
 - 10 GiB Cloud Run ephemeral disk
 
-The build workspace, Gradle cache, npm cache, temporary files, and APK output are mounted on the same ephemeral disk. The disk is not RAM-backed.
+The build workspace, Gradle cache, npm cache, and APK output are mounted on the same ephemeral disk.
+
+`/tmp` is intentionally **not** mounted onto the disk volume. It remains on the container's default temporary filesystem and therefore uses RAM.
 
 The disk is deleted when the Cloud Run task ends. It is intended only for build-time data.
 
@@ -72,17 +74,17 @@ gcloud config set project main-api-server
 Create the Artifact Registry repository once if it does not already exist:
 
 ```bash
-gcloud artifacts repositories create loading-dock \
+gcloud artifacts repositories create build-dock \
   --repository-format=docker \
   --location=europe-north1 \
-  --description="Loading Dock Cloud Run images"
+  --description="Build Dock container images"
 ```
 
 Build and push the image:
 
 ```bash
 gcloud builds submit \
-  --tag=europe-north1-docker.pkg.dev/main-api-server/loading-dock/loading-dock-builder:latest
+  --tag=europe-north1-docker.pkg.dev/main-api-server/build-dock/build-dock-runner:latest
 ```
 
 ## Deploy the Cloud Run Job
@@ -95,7 +97,16 @@ gcloud run jobs replace job.yaml \
   --project=main-api-server
 ```
 
-The Job uses a Cloud Run ephemeral disk volume with `medium: Disk`, rather than an in-memory volume. This prevents the build files and caches from being deliberately backed by RAM.
+The Job uses a Cloud Run ephemeral disk volume with `medium: Disk`. It is mounted at:
+
+```text
+/build
+/builds
+/root/.gradle
+/root/.npm
+```
+
+`/tmp` is deliberately not mounted to that disk because it is intended to remain RAM-backed.
 
 ## Configure the EAS token
 
@@ -106,7 +117,7 @@ Configure it directly on the Cloud Run Job:
 ```bash
 gcloud run jobs update loading-dock-builder \
   --region=europe-north1 \
-  --set-env-vars="EXPO_TOKEN=YOUR_EXPO_TOKEN"
+  --update-env-vars="EXPO_TOKEN=YOUR_EXPO_TOKEN"
 ```
 
 Alternatively, supply it at execution time:
@@ -153,23 +164,25 @@ gcloud logging read \
 
 ## Storage layout
 
-The single ephemeral disk is mounted at:
+The disk-backed paths are:
 
 ```text
 /build
 /builds
 /root/.gradle
 /root/.npm
+```
+
+The RAM-backed temporary path is:
+
+```text
 /tmp
 ```
 
-All of these paths use the same 10 GiB disk volume.
-
-The disk is disposable and is deleted when the task finishes. Build artifacts therefore need to be copied or returned by another system if they need to survive the execution.
+The 10 GiB disk is disposable and is deleted when the task finishes. Build artifacts therefore need to be copied or returned by another system if they need to survive the execution.
 
 ## Security
 
 The runner is intentionally stateless. No Tailscale configuration is required.
 
 Do not commit Expo tokens, Git credentials, or other secrets to this public repository. A private build repository will require an appropriate Git authentication mechanism.
-
