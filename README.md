@@ -1,19 +1,40 @@
 # Loading Dock Cloud Run Runner
 
-A disposable Google Cloud Run Job runner for Loading Dock Android/EAS local builds.
+A disposable Google Cloud Run Job runner for Loading Dock / Build Dock local EAS builds.
 
 ## Runtime
 
-The reference job is configured for:
+The reference Cloud Run Job is configured for:
 
+- Region: `europe-north1`
 - 4 vCPU
 - 16 GiB RAM
 - 1 task
 - 1 task at a time
 - 0 automatic retries
 - 1 hour task timeout
+- 10 GiB Cloud Run ephemeral disk
 
-Cloud Run Jobs support execution-time overrides for environment variables, so the repository URL and build directory can change for every build without changing the Job definition.
+The build workspace, Gradle cache, npm cache, temporary files, and APK output are mounted on the same ephemeral disk. The disk is not RAM-backed.
+
+The disk is deleted when the Cloud Run task ends. It is intended only for build-time data.
+
+## Environment configuration
+
+The Job keeps these values as environment variables:
+
+```text
+BUILD_PLATFORM=android
+BUILD_PROFILE=preview
+BUILD_OUTPUT_DIRECTORY=/builds/output
+BUILD_WORKSPACE_DIRECTORY=/build
+BUILD_MAX_RAM_USAGE=4g
+RUN_EXPO_DOCTOR=true
+NPM_CONFIG_CACHE=/root/.npm
+TMPDIR=/tmp
+```
+
+`EXPO_TOKEN` is also required for the non-interactive EAS preflight/build, but it must not be committed to this public repository. Set it directly on the Cloud Run Job or provide it as an execution-time environment variable.
 
 ## Dynamic build inputs
 
@@ -21,129 +42,134 @@ These are supplied for each execution:
 
 - `BUILD_REPO_URL` — Git repository URL to clone.
 - `BUILD_DIRECTORY` — directory inside the cloned repository to build. Use `.` for the repository root.
-- `BUILD_ID` — optional identifier used for runner logging. If omitted, the Cloud Run execution ID is used.
+- `BUILD_ID` — identifier used in the generated APK filename. If omitted, the Cloud Run execution ID is used.
 
-Example:
+The runner also reads `BUILD_PLATFORM` and `BUILD_PROFILE`, so the Job configuration controls the actual EAS build command.
+
+## Build flow
+
+Each execution:
+
+1. Creates a clean build workspace.
+2. Clones the requested Git repository.
+3. Installs npm dependencies.
+4. Runs Expo Doctor when enabled.
+5. Runs EAS authentication/project preflight.
+6. Runs an EAS local build.
+7. Writes the resulting APK to `/builds/output`.
+8. Exits and allows Cloud Run to discard the ephemeral disk.
+
+The runner does **not** currently upload the APK to EAS after the local build.
+
+## Build the container
+
+Set the Google Cloud project:
+
+```bash
+gcloud config set project main-api-server
+```
+
+Create the Artifact Registry repository once if it does not already exist:
+
+```bash
+gcloud artifacts repositories create loading-dock \
+  --repository-format=docker \
+  --location=europe-north1 \
+  --description="Loading Dock Cloud Run images"
+```
+
+Build and push the image:
+
+```bash
+gcloud builds submit \
+  --tag=europe-north1-docker.pkg.dev/main-api-server/loading-dock/loading-dock-builder:latest
+```
+
+## Deploy the Cloud Run Job
+
+The repository contains the complete Job definition in `job.yaml`.
+
+```bash
+gcloud run jobs replace job.yaml \
+  --region=europe-north1 \
+  --project=main-api-server
+```
+
+The Job uses a Cloud Run ephemeral disk volume with `medium: Disk`, rather than an in-memory volume. This prevents the build files and caches from being deliberately backed by RAM.
+
+## Configure the EAS token
+
+Do not put the real token into `job.yaml`, Dockerfile, or this repository.
+
+Configure it directly on the Cloud Run Job:
+
+```bash
+gcloud run jobs update loading-dock-builder \
+  --region=europe-north1 \
+  --set-env-vars="EXPO_TOKEN=YOUR_EXPO_TOKEN"
+```
+
+Alternatively, supply it at execution time:
 
 ```bash
 gcloud run jobs execute loading-dock-builder \
-  --region=europe-west1 \
-  --update-env-vars \
-  "BUILD_REPO_URL=https://github.com/Quinton-Angus/Dev-Connect-Mobile-V2,BUILD_DIRECTORY=Dev-Connect-Mobile,BUILD_ID=dev-connect-v2"
+  --region=europe-north1 \
+  --update-env-vars="EXPO_TOKEN=YOUR_EXPO_TOKEN,BUILD_REPO_URL=https://github.com/OWNER/REPOSITORY,BUILD_DIRECTORY=.,BUILD_ID=test-001" \
+  --wait
 ```
 
-The execution override does not change the underlying Job configuration.
-
-## Constant Job configuration
-
-The supplied `job.yaml` keeps build constants in Cloud Run environment variables:
-
-```text
-BUILD_PLATFORM=android
-BUILD_PROFILE=preview
-BUILD_OUTPUT_DIRECTORY=/workspace/output
-BUILD_WORKSPACE_DIRECTORY=/workspace/source
-GRADLE_HEAP_MB=6144
-GRADLE_METASPACE_MB=1024
-GRADLE_WORKERS=4
-RUN_EXPO_DOCTOR=true
-NPM_INSTALL_COMMAND=ci
-```
-
-Change these in the Cloud Run Job rather than rebuilding the image when possible.
-
-## EAS authentication and artifact delivery
-
-The runner performs the Android build locally inside Cloud Run, then uploads the resulting APK directly to EAS using:
-
-```bash
-eas upload --platform android --build-path <APK> --non-interactive --json
-```
-
-Expo documents `eas upload` as the command for uploading a local build and generating a shareable link. Local EAS builds require Expo authentication; this runner uses `EXPO_TOKEN`. citeturn1search0turn1search5
-
-Create an Expo access token and store it in Google Secret Manager as `EXPO_TOKEN`. Do **not** put the token directly into `job.yaml` or an ordinary environment variable. Cloud Run can expose a Secret Manager secret as an environment variable, and the Job service account needs Secret Manager Secret Accessor permission. citeturn2search0turn2search1
+## Execute a build
 
 For example:
 
 ```bash
-gcloud run jobs update loading-dock-builder \
-  --region=europe-west1 \
-  --set-secrets EXPO_TOKEN=EXPO_TOKEN:1
+gcloud run jobs execute loading-dock-builder \
+  --region=europe-north1 \
+  --update-env-vars="BUILD_REPO_URL=https://github.com/Quinton-Angus/Dev-Connect-Mobile-V2,BUILD_DIRECTORY=.,BUILD_ID=dev-connect-v2" \
+  --wait
 ```
 
-The resulting flow is:
+If `EXPO_TOKEN` is already configured on the Job, it does not need to be included in the execution override.
 
-```text
-Cloud Run Job starts
-        ↓
-shallow git clone
-        ↓
-npm ci / npm install
-        ↓
-Expo Doctor
-        ↓
-EAS local Android build
-        ↓
-APK
-        ↓
-eas upload
-        ↓
-EAS-hosted artifact / shareable URL
-        ↓
-exit 0
-```
+## View executions and logs
 
-There is no Google Cloud Storage dependency for the build artifact.
-
-## Build the image
-
-Artifact Registry image URLs use this format:
-
-```text
-LOCATION-docker.pkg.dev/PROJECT_ID/REPOSITORY/IMAGE:TAG
-```
-
-For this runner, a sensible example is:
-
-```text
-europe-west1-docker.pkg.dev/PROJECT_ID/loading-dock/loading-dock-builder:latest
-```
-
-Google documents this Artifact Registry naming format and Cloud Run can deploy images from Artifact Registry directly. citeturn0search2turn0search0
-
-Build and push it with:
+List recent executions:
 
 ```bash
-gcloud builds submit \
-  --tag=europe-west1-docker.pkg.dev/PROJECT_ID/loading-dock/loading-dock-builder:latest
+gcloud run jobs executions list \
+  --job=loading-dock-builder \
+  --region=europe-north1
 ```
 
-Then replace `IMAGE_URL` in `job.yaml` with that image URL and deploy:
+Read logs:
 
 ```bash
-gcloud run jobs replace job.yaml --region=europe-west1
+gcloud logging read \
+  'resource.type="cloud_run_job" AND resource.labels.job_name="loading-dock-builder"' \
+  --project=main-api-server \
+  --limit=100 \
+  --format="value(textPayload)"
 ```
 
-Alternatively:
+## Storage layout
 
-```bash
-gcloud run jobs create loading-dock-builder \
-  --image=europe-west1-docker.pkg.dev/PROJECT_ID/loading-dock/loading-dock-builder:latest \
-  --region=europe-west1 \
-  --cpu=4 \
-  --memory=16Gi \
-  --tasks=1 \
-  --parallelism=1 \
-  --max-retries=0 \
-  --task-timeout=1h \
-  --set-secrets EXPO_TOKEN=EXPO_TOKEN:1
+The single ephemeral disk is mounted at:
+
+```text
+/build
+/builds
+/root/.gradle
+/root/.npm
+/tmp
 ```
 
-Cloud Run's documented container image format is `LOCATION-docker.pkg.dev/PROJECT_ID/REPOSITORY/IMAGE:TAG`. citeturn0search0turn0search2
+All of these paths use the same 10 GiB disk volume.
+
+The disk is disposable and is deleted when the task finishes. Build artifacts therefore need to be copied or returned by another system if they need to survive the execution.
 
 ## Security
 
-Do not put secrets such as Expo tokens or GitHub credentials directly into the image or ordinary plaintext Job configuration. Use Secret Manager for credentials. A private Git repository will also require an appropriate Git authentication mechanism.
+The runner is intentionally stateless. No Tailscale configuration is required.
 
-The runner itself is intentionally stateless: one Job execution performs one build, uploads the artifact to EAS, and terminates.
+Do not commit Expo tokens, Git credentials, or other secrets to this public repository. A private build repository will require an appropriate Git authentication mechanism.
+
