@@ -1,9 +1,7 @@
 apiVersion: run.googleapis.com/v1
 kind: Job
 metadata:
-  name: loading-dock-runner-v2
-  annotations:
-    run.googleapis.com/launch-stage: BETA
+  name: loading-dock-builder
 spec:
   template:
     spec:
@@ -14,35 +12,39 @@ spec:
           maxRetries: 0
           timeoutSeconds: 3600
           containers:
-            - image: IMAGE_URL
+            - image: europe-north1-docker.pkg.dev/main-api-server/loading-dock/loading-dock-builder:latest
               env:
                 - name: BUILD_PLATFORM
                   value: android
                 - name: BUILD_PROFILE
                   value: preview
                 - name: BUILD_OUTPUT_DIRECTORY
-                  value: /build/output
+                  value: /builds/output
                 - name: BUILD_WORKSPACE_DIRECTORY
                   value: /build
                 - name: BUILD_MAX_RAM_USAGE
                   value: "4g"
                 - name: RUN_EXPO_DOCTOR
                   value: "true"
+                - name: NPM_CONFIG_CACHE
+                  value: /root/.npm
+                - name: TMPDIR
+                  value: /tmp
               resources:
                 limits:
                   cpu: "4"
                   memory: 16Gi
               volumeMounts:
-                - name: build-disk
+                - name: build-tmp
                   mountPath: /build
-                - name: build-disk
+                - name: build-tmp
                   mountPath: /root/.gradle
-                - name: build-disk
+                - name: build-tmp
                   mountPath: /root/.npm
-                - name: build-disk
+                - name: build-tmp
                   mountPath: /tmp
           volumes:
-            - name: build-disk
+            - name: build-tmp
               emptyDir:
-                medium: Disk
-                sizeLimit: 10Gi
+                medium: Memory
+                sizeLimit: 8Gi
