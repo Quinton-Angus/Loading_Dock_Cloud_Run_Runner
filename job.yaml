@@ -39,6 +39,8 @@ spec:
                   mountPath: /root/.gradle
                 - name: build-disk
                   mountPath: /root/.npm
+                - name: build-disk
+                  mountPath: /tmp
           volumes:
             - name: build-disk
               emptyDir:
