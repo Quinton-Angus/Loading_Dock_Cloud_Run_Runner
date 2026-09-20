@@ -1,7 +1,7 @@
 apiVersion: run.googleapis.com/v1
 kind: Job
 metadata:
-  name: loading-dock-runner
+  name: loading-dock-runner-v2
   annotations:
     run.googleapis.com/launch-stage: BETA
 spec:
