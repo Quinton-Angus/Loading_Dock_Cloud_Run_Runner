@@ -11,6 +11,8 @@ const config = {
   outputDirectory: process.env.BUILD_OUTPUT_DIRECTORY || "/builds/output",
   workspaceDirectory: process.env.BUILD_WORKSPACE_DIRECTORY || "/build",
   maxRAMusage: process.env.BUILD_MAX_RAM_USAGE || "4g",
+  platform: process.env.BUILD_PLATFORM || "android",
+  profile: process.env.BUILD_PROFILE || "preview",
   runExpoDoctor: process.env.RUN_EXPO_DOCTOR !== "false",
   buildId: process.env.BUILD_ID || process.env.CLOUD_RUN_EXECUTION || "build"
 }
@@ -30,8 +32,17 @@ function run(command, args, options = {}) {
     child.stdout.on("data", data => process.stdout.write(data))
     child.stderr.on("data", data => process.stderr.write(data))
     child.on("error", reject)
-    child.on("close", code => code === 0 ? resolvePromise() : reject(new Error(`${command} exited with code ${code}`)))
+    child.on("close", code => code === 0
+      ? resolvePromise()
+      : reject(new Error(`${command} exited with code ${code}`)))
   })
+}
+
+export function createEasPreflightCommands() {
+  return [
+    ["eas", ["whoami"]],
+    ["eas", ["project:info"]]
+  ]
 }
 
 function validateConfig() {
@@ -39,7 +50,13 @@ function validateConfig() {
   if (!/^https?:\/\//i.test(config.repoUrl) && !/^git@/i.test(config.repoUrl)) {
     throw new Error("BUILD_REPO_URL must be an HTTP(S) or SSH Git URL")
   }
+  if (!config.platform) throw new Error("BUILD_PLATFORM must not be empty")
+  if (!config.profile) throw new Error("BUILD_PROFILE must not be empty")
   config.maxRAMusage = validateJavaHeapSize(config.maxRAMusage)
+
+  if (!process.env.EXPO_TOKEN) {
+    throw new Error("EXPO_TOKEN is required for non-interactive EAS builds")
+  }
 }
 
 function getRepositoryName(repoUrl) {
@@ -57,6 +74,7 @@ async function main() {
   log("Build command received. processing request, please wait...")
   log(`Requested build url is ${config.repoUrl}`)
   log(`Build directory set as: "${config.buildDirectory}"`)
+  log(`Requested platform/profile: ${config.platform}/${config.profile}`)
   log(`Requested maximum Java heap size is: ${config.maxRAMusage}`)
 
   await rm(config.workspaceDirectory, { recursive: true, force: true })
@@ -81,12 +99,20 @@ async function main() {
   log("Build check passed.")
   log(`Using maximum Java heap size from build request: ${config.maxRAMusage}`)
 
+  for (const [command, args] of createEasPreflightCommands()) {
+    await run(command, args, { cwd: workingDirectory })
+  }
+
   const repositoryName = getRepositoryName(config.repoUrl)
   const outputFile = join(config.outputDirectory, `loadingDockOutput.${repositoryName}.${config.buildId}.apk`)
 
   log("Beginning EAS build")
   await run("eas", [
-    "build", "--platform", "android", "--profile", "preview", "--local", "--output", outputFile
+    "build",
+    "--platform", config.platform,
+    "--profile", config.profile,
+    "--local",
+    "--output", outputFile
   ], {
     cwd: workingDirectory,
     env: createGradleEnvironment(config.maxRAMusage)
