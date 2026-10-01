@@ -30,7 +30,7 @@ BUILD_PLATFORM=android
 BUILD_PROFILE=preview
 BUILD_OUTPUT_DIRECTORY=/builds/output
 BUILD_WORKSPACE_DIRECTORY=/build
-BUILD_MAX_RAM_USAGE=4g
+BUILD_JAVA_HEAP_SIZE=8g
 RUN_EXPO_DOCTOR=true
 NPM_CONFIG_CACHE=/root/.npm
 TMPDIR=/tmp
@@ -45,8 +45,11 @@ These are supplied for each execution:
 - `BUILD_REPO_URL` — Git repository URL to clone.
 - `BUILD_DIRECTORY` — directory inside the cloned repository to build. Use `.` for the repository root.
 - `BUILD_ID` — identifier used in the generated APK filename. If omitted, the Cloud Run execution ID is used.
+- `BUILD_JAVA_HEAP_SIZE` — maximum Java/Gradle heap, such as `8g` or `6144m`. Defaults to `8g`.
 
-The runner also reads `BUILD_PLATFORM` and `BUILD_PROFILE`, so the Job configuration controls the actual EAS build command.
+The Java heap setting is passed into Gradle through `GRADLE_OPTS` as `org.gradle.jvmargs`. The Cloud Run Job currently provides `8g` to leave the remaining memory available for Node.js, Android tooling, and the operating system.
+
+The runner reads `BUILD_JAVA_HEAP_SIZE` for the Gradle/Java heap and `BUILD_PLATFORM` / `BUILD_PROFILE` for the EAS build command. `BUILD_MAX_RAM_USAGE` remains accepted as a backwards-compatible alias.
 
 ## Build flow
 
