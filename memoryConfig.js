@@ -2,7 +2,7 @@ export const MEMORY_CONFIG = Object.freeze({
   containerLimitMB: 16384,
   safetyMarginMB: 4096,
   nodeHeapMB: 512,
-  gradleHeapMB: 4096,
+  gradleHeapMB: 8192,
   gradleMetaspaceMB: 1024
 })
 
@@ -39,6 +39,6 @@ export function createGradleJvmArgsProperty(requestedMemory) {
 export function createGradleEnvironment(requestedMemory, baseEnvironment = process.env) {
   return {
     ...baseEnvironment,
-    GRADLE_OPTS: `-Dorg.gradle.jvmargs="${createGradleJvmArgsProperty(requestedMemory)}" -Dorg.gradle.parallel=true -Dorg.gradle.daemon=false`
+    GRADLE_OPTS: `-Dorg.gradle.jvmargs="\${createGradleJvmArgsProperty(requestedMemory)}" -Dorg.gradle.parallel=true -Dorg.gradle.daemon=false`
   }
 }
