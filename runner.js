@@ -10,7 +10,7 @@ const config = {
   buildDirectory: process.env.BUILD_DIRECTORY || ".",
   outputDirectory: process.env.BUILD_OUTPUT_DIRECTORY || "/builds/output",
   workspaceDirectory: process.env.BUILD_WORKSPACE_DIRECTORY || "/build",
-  maxRAMusage: process.env.BUILD_MAX_RAM_USAGE || "4g",
+  javaHeapSize: process.env.BUILD_JAVA_HEAP_SIZE || process.env.BUILD_MAX_RAM_USAGE || "8g",
   platform: process.env.BUILD_PLATFORM || "android",
   profile: process.env.BUILD_PROFILE || "preview",
   runExpoDoctor: process.env.RUN_EXPO_DOCTOR !== "false",
@@ -52,7 +52,7 @@ function validateConfig() {
   }
   if (!config.platform) throw new Error("BUILD_PLATFORM must not be empty")
   if (!config.profile) throw new Error("BUILD_PROFILE must not be empty")
-  config.maxRAMusage = validateJavaHeapSize(config.maxRAMusage)
+  config.javaHeapSize = validateJavaHeapSize(config.javaHeapSize)
 
   if (!process.env.EXPO_TOKEN) {
     throw new Error("EXPO_TOKEN is required for non-interactive EAS builds")
@@ -84,7 +84,7 @@ async function main() {
   log(`Requested build url is ${config.repoUrl}`)
   log(`Build directory set as: "${config.buildDirectory}"`)
   log(`Requested platform/profile: ${config.platform}/${config.profile}`)
-  log(`Requested maximum Java heap size is: ${config.maxRAMusage}`)
+  log(`Requested maximum Java heap size is: ${config.javaHeapSize}`)
 
   await resetDirectoryContents(config.workspaceDirectory)
   await resetDirectoryContents(config.outputDirectory)
@@ -109,7 +109,7 @@ async function main() {
   if (config.runExpoDoctor) await run("npx", ["expo-doctor"], { cwd: workingDirectory })
 
   log("Build check passed.")
-  log(`Using maximum Java heap size from build request: ${config.maxRAMusage}`)
+  log(`Using maximum Java heap size from build request: ${config.javaHeapSize}`)
 
   for (const [command, args] of createEasPreflightCommands()) {
     await run(command, args, { cwd: workingDirectory })
@@ -127,7 +127,7 @@ async function main() {
     "--output", outputFile
   ], {
     cwd: workingDirectory,
-    env: createGradleEnvironment(config.maxRAMusage)
+    env: createGradleEnvironment(config.javaHeapSize)
   })
 
   await access(outputFile, fsConstants.F_OK)
